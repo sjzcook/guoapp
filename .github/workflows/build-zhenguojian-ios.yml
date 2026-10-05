@@ -41,6 +41,11 @@ jobs:
           sudo gem install cocoapods
           pod --version
 
+      - name: Refresh Flutter lockfile
+        run: |
+          set -euo pipefail
+          flutter pub get
+
       - name: Build zhenguojian unsigned IPA
         run: |
           set -euo pipefail
@@ -76,9 +81,9 @@ jobs:
           ipa=$(find dist/ios -maxdepth 1 -type f -name '*-ios-unsigned.ipa' | head -n1)
           echo "检查：$ipa"
 
-          unzip -l "$ipa" | grep -E 'Payload/[^/]+.app/'
+          unzip -l "$ipa" | grep -E 'Payload/[^/]+\.app/'
 
-          if unzip -l "$ipa" | grep -E 'embedded.mobileprovision|.mobileprovision$'; then
+          if unzip -l "$ipa" | grep -E 'embedded\.mobileprovision|\.mobileprovision$'; then
             echo "检测到 provisioning profile，IPA 可能不是未签名包。"
             exit 1
           fi
