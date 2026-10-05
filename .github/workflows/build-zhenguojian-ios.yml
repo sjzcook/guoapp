@@ -1,0 +1,94 @@
+name: Build zhenguojian unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-unsigned-zhenguojian-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: Build zhenguojian unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.1'
+          cache: true
+          cache-dependency-path: native/go.sum
+
+      - name: Setup CocoaPods
+        run: |
+          sudo gem install cocoapods
+          pod --version
+
+      - name: Build zhenguojian unsigned IPA
+        run: |
+          set -euo pipefail
+
+          # --all-sources = zhenguojian（真果鉴）
+          python3 scripts/build_ios.py --all-sources
+
+          # build_ios.py 会同时生成 unsigned-app.zip、unsigned.ipa 和 SHA256SUMS.txt。
+          # 本 workflow 只保留未签名 IPA。
+          rm -f dist/ios/*-ios-unsigned-app.zip
+          rm -f dist/ios/SHA256SUMS.txt
+
+          ipa=$(find dist/ios -maxdepth 1 -type f -name '*-ios-unsigned.ipa' | head -n1)
+          if [ -z "$ipa" ]; then
+            echo "未生成未签名 IPA。"
+            find dist/ios -maxdepth 1 -type f -print
+            exit 1
+          fi
+
+          echo "生成：$ipa"
+
+      - name: Verify unsigned IPA
+        run: |
+          set -euo pipefail
+
+          count=$(find dist/ios -maxdepth 1 -type f -name '*-ios-unsigned.ipa' | wc -l | tr -d ' ')
+          if [ "$count" -ne 1 ]; then
+            echo "期望生成 1 个 IPA，实际生成 $count 个。"
+            find dist/ios -maxdepth 1 -type f -print
+            exit 1
+          fi
+
+          ipa=$(find dist/ios -maxdepth 1 -type f -name '*-ios-unsigned.ipa' | head -n1)
+          echo "检查：$ipa"
+
+          unzip -l "$ipa" | grep -E 'Payload/[^/]+.app/'
+
+          if unzip -l "$ipa" | grep -E 'embedded.mobileprovision|.mobileprovision$'; then
+            echo "检测到 provisioning profile，IPA 可能不是未签名包。"
+            exit 1
+          fi
+
+          echo "IPA 未发现 provisioning profile，检查通过。"
+
+      - name: Upload zhenguojian unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhenguojian-ios-unsigned-ipa
+          path: dist/ios/*-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
